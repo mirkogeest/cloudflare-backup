@@ -9,21 +9,23 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mirkogeest/cloudflare-backup.git"
+    "url": "https://github.com/mirkogeest/cloudflare-backup-s3.git"
   },
   "keywords": [
     "cloudflare",
     "bind",
     "dns",
     "backup",
-    "all settings"
+    "aws",
+    "s3"
   ],
   "author": "Ryan Graham <r.m.graham@gmail.com>",
+  "contributors": ["Mirko Geest"],
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/mirkogeest/cloudflare-backup/issues"
   },
-  "homepage": "https://github.com/mirkogeest/cloudflare-backup",
+  "homepage": "https://github.com/mirkogeest/cloudflare-backup-s3",
   "dependencies": {
     "aws-sdk": "^2.343.0"
   }
