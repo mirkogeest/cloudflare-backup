@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "Simple tool for backing up to AWS S3 your CloudFlare hosted DNS records and other settings",
   "main": "bin/cf-backup.js",
-  "scripts": {},
+  "scripts": {
+    "start": "node bin/cf-backup.js"
+  },
   "bin": {
     "cf-backup": "bin/cf-backup.js"
   },
