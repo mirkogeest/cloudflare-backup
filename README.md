@@ -25,7 +25,7 @@ CF_TOKEN <CloudFlare account token>
 Lambda Execution role: Use or create one, with access to your S3 bucket.
 No VPC is needed
 
-#$ Step 3
+## Step 3
 npm test (Executes the lambda function at Lambda server)
 
 Check S3 
