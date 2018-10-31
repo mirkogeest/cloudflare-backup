@@ -1,0 +1,7 @@
+{
+  "lambda": {
+    "role": "cloudflare-backup-s3-executor",
+    "name": "cloudflare-backup-s3",
+    "region": "eu-west-1"
+  }
+}

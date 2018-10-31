@@ -1,26 +1,26 @@
 #!/usr/bin/env node
 
-var fmt = require('util').format;
-var https = require('https');
-var qs = require('querystring');
+const fmt = require('util').format;
+const https = require('https');
+const qs = require('querystring');
 const AWS = require('aws-sdk');
 
-var email = process.env.CF_EMAIL;
-var token = process.env.CF_TOKEN;
+const email = process.env.CF_EMAIL;
+const token = process.env.CF_TOKEN;
 if (!email || !token) {
   console.error('CF_EMAIL and CF_TOKEN must be set');
   return process.exit(1);
 }
 
 const writeToAws = true;
-var writeNowToAws = false;
 var logBackup = console.log;
 var logMessages = [];
 
-// Add all the 
+// Cloudflare settings list to be backed up as JSON
 const cloudflareJsItems = [
   'pagerules',
   'settings',
+  // you can add more settings here
 ]
 
 const CloudflareStatusCodes = {
@@ -40,46 +40,67 @@ console.log = function () {
   logBackup.apply(console, arguments);
 };
 
-var s3Bucket = new AWS.S3({ params: { Bucket: 'MY_BUCKET_NAME', timeout: 6000000 } });
+const s3Bucket = new AWS.S3({ params: { Bucket: 'MY_BUCKET_NAME', timeout: 6000000 } });
 
-getZones(function (err, zones) {
-  if (err) {
-    return console.error(err);
-  }
 
-  writeNowToAws = true
+module.exports = function doBackup() {
+  return new Promise((resolve, reject) => {
 
-  let promiseArr = zones.map((zone) => dumpZoneDnss(zone))
+    console.log('inside doBackup')
 
-  Promise.all(promiseArr)
-    .then(function (resultsArray) {
-      writeNowToAws = false
-      zonesFinished()
-    }).catch(function (err) {
-      console.log('Error at dumpZone', err)
-    })
+    return getZones(function (err, zones) {
+      if (err) {
+        return console.error(err);
+      }
 
-    if (writeToAws) {
-      cloudflareJsItems.map((item) => {
-        zones.map((zone) => dumpZoneJsItem(zone, item))
-      })
-    }
+      let promiseArr = zones.map((zone) => dumpZoneDnss(zone))
 
-});
+      Promise.all(promiseArr)
+        .then(function (resultsArray) {
+          let promiseArr2 = []
+
+          // Now write DNS data to S3
+          promiseArr2.push(zonesFinished())
+
+          if (writeToAws) {
+            // Write other cloudflare settings to S3
+            cloudflareJsItems.map((item) => {
+              zones.map((zone) => {
+                promiseArr2.push(dumpZoneJsItem(zone, item))
+              })
+            })
+          }
+
+          Promise.all(promiseArr2)
+            .then((resultArray) => {
+              console.log('%i itens written to S3: ', promiseArr.length)
+              return resolve()
+            })
+
+
+        }).catch(function (err) {
+          console.log('Error at dumpZone', err)
+        })
+
+    });
+  })
+}
 
 function zonesFinished() {
-  if (writeToAws) {
-    writeToAwsBucket(new Date().toISOString().slice(0, 10) + '.dns.txt', logMessages.join("\n"));
-  }
+  return new Promise((resolve, reject) => {
+    if (writeToAws) {
+      writeToAwsBucket(new Date().toISOString().slice(0, 10) + '.dns.txt', logMessages.join("\n"))
+        .then(() => { return resolve() });
+    }
+  })
 }
 
 function dumpZoneDnss(zone) {
   return new Promise((resolve, reject) => {
-
     allPages('/zones/' + zone.id + '/dns_records', function (err, recs) {
       if (err) {
         console.error('Error getting zone records for %s:', zone.id, err);
-        return reject()
+        return resolve()
       }
 
       console.log(';; Domain: %s', zone.name);
@@ -99,16 +120,17 @@ function dumpZoneDnss(zone) {
 
 function dumpZoneJsItem(zone, item) {
   return new Promise((resolve, reject) => {
-
+    console.log('Backing up other zone settings', zone.id, item)
     allPages('/zones/' + zone.id + '/' + item, function (err, data) {
       if (err) {
         console.error('Error getting zone %s for %s:', item, zone.id, err);
-        return reject()
+        return resolve()
       }
 
-      writeToAwsBucket(new Date().toISOString().slice(0, 10) + '.' + zone.name + '.' + item + '.js', JSON.stringify(data));
-
-      return resolve();
+      writeToAwsBucket(new Date().toISOString().slice(0, 10) + '.' + zone.name + '.' + item + '.js', JSON.stringify(data))
+        .then(() => {
+          return resolve();
+        })
     });
   })
 }
@@ -130,6 +152,10 @@ function bindFormat(rec) {
   return fmt('%s.\t%d\tIN\t%s\t%s', rec.name, rec.ttl, rec.type, content);
 }
 
+/**
+ * Gets a list of all zones at Cloudflare
+ * @param {*} callback 
+ */
 function getZones(callback) {
   allPages('/zones', function (err, res) {
     callback(err, res);
@@ -148,11 +174,15 @@ function allPages(path, callback) {
 
     cfReq(path, params, function handlePage(err, res) {
       if (err) {
+        console.log('cfReq ERR', err)
         return callback(err);
-      }
-      if (res.result) {
+      } else if (res.result) {
         collection = collection.concat(res.result);
+      } else {
+        console.log('cfReq UNEXPECTED OUTPUT', res)
+        return callback(false);
       }
+
       if (hasMorePages(res.result_info)) {
         return getPage(res.result_info.page + 1);
       } else {
@@ -181,10 +211,17 @@ function cfReq(path, params, callback) {
     },
     method: 'GET',
   };
+
   var req = https.request(opts, function (res) {
     return JSONResponse(res, callback);
   });
+
+  req.on('error', function (err) {
+    console.log('HTTP ERROR', err)
+  });
+
   req.end();
+
   return req;
 }
 
@@ -199,6 +236,11 @@ function JSONResponse(res, callback) {
     body += buf;
   }
 
+  function error(err) {
+    console.log('ERROR', err)
+    callback(err)
+  }
+
   function parse() {
     var err = null;
     try {
@@ -211,24 +253,30 @@ function JSONResponse(res, callback) {
 }
 
 function writeToAwsBucket(filename, content) {
-  let filepath = 'cloudflare/' + new Date().toISOString().slice(0, 10) + '/' + filename
-  let bucket = process.env.CF_BACKUP_AWS_BUCKET
 
-  let params = {
-    ACL: 'public-read',
-    Bucket: bucket,
-    Key: filepath,
-    Body: content,
-    ContentType: 'binary'
-  };
+  return new Promise((resolve, reject) => {
 
-  console.log(params);
+    let filepath = 'cloudflare/' + new Date().toISOString().slice(0, 10) + '/' + filename
+    let bucket = process.env.CF_BACKUP_AWS_BUCKET
 
-  s3Bucket.putObject(params, (error, data) => {
-    if (error) {
-      console.log(error);
-    } else {
-      console.log("Successfully uploaded data to " + bucket + filename);
-    }
-  });
+    let params = {
+      ACL: 'public-read',
+      Bucket: bucket,
+      Key: filepath,
+      Body: content,
+      ContentType: 'binary'
+    };
+
+    // console.log('S3:', bucket + filename)
+    // console.log('S3 params', params)
+
+    s3Bucket.putObject(params, function (err, data) {
+      if (err) {
+        console.log('AWS putObject ERROR:', err);
+        return resolve()
+      } else {
+        return resolve()
+      }
+    });
+  })
 }

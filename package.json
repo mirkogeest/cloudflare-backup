@@ -2,9 +2,13 @@
   "name": "cloudflare-backup-s3",
   "version": "1.0.0",
   "description": "Simple tool for backing up to AWS S3 your CloudFlare hosted DNS records and other settings",
-  "main": "bin/cf-backup.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node bin/cf-backup.js"
+    "start": "node index.js",
+    "create": "claudia create --name cloudflare-backup-s3 --region eu-west-1 --handler index.handler --timeout 20",
+    "test": "claudia test-lambda",
+    "deploy": "claudia update",
+    "logs": "aws logs filter-log-events --log-group-name /aws/lambda/cloudflare-backup-s3"
   },
   "bin": {
     "cf-backup": "bin/cf-backup.js"
@@ -19,16 +23,20 @@
     "dns",
     "backup",
     "aws",
-    "s3"
+    "s3",
+    "claudiajs"
   ],
   "author": "Ryan Graham <r.m.graham@gmail.com>",
-  "contributors": ["Mirko Geest"],
+  "contributors": [
+    "Mirko Geest"
+  ],
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/mirkogeest/cloudflare-backup/issues"
   },
   "homepage": "https://github.com/mirkogeest/cloudflare-backup-s3",
   "dependencies": {
-    "aws-sdk": "^2.343.0"
+    "aws-sdk": "^2.343.0",
+    "claudia-api-builder": "^4.1.1"
   }
 }
